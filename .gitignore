@@ -1,0 +1,20 @@
+# База данных
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Зависимости и сборка
+node_modules/
+dist/
+
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Системное
+.DS_Store
+Thumbs.db
