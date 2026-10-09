@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS tracked_coins (
   user_id INTEGER NOT NULL,
   symbol TEXT NOT NULL,
   name TEXT NOT NULL,
-  last_updated_at INTEGER,
+  last_updated_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,
 
   FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
