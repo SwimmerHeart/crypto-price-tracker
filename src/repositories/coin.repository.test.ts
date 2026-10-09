@@ -36,29 +36,31 @@ function createUser(apiKeyHash: string): number {
 test('create добавляет монету, listByUser её видит', () => {
   const userId = createUser('owner-one')
 
-  const id = coinRepo.create(userId, 'BTC', 'Bitcoin')
+  const row = coinRepo.create(userId, 'BTC', 'Bitcoin', 1_700_000_000_000)
 
-  expect(id).toBeGreaterThan(0)
+  expect(row.id).toBeGreaterThan(0)
+  expect(row).toMatchObject({ user_id: userId, symbol: 'BTC', name: 'Bitcoin' })
+  expect(row.last_updated_at).toBe(1_700_000_000_000)
 
   const rows = coinRepo.listByUser(userId)
   expect(rows).toHaveLength(1)
-  expect(rows[0]).toMatchObject({ id, user_id: userId, symbol: 'BTC', name: 'Bitcoin' })
-  expect(rows[0]?.last_updated_at).toBeNull()
+  expect(rows[0]?.id).toBe(row.id)
+  expect(rows[0]?.last_updated_at).toBe(1_700_000_000_000)
   expect(rows[0]?.created_at).toEqual(expect.any(Number))
 })
 
 test('повторный create той же пары (user, symbol) бросает ConflictError', () => {
   const userId = createUser('owner-two')
 
-  coinRepo.create(userId, 'ETH', 'Ethereum')
+  coinRepo.create(userId, 'ETH', 'Ethereum', Date.now())
 
-  expect(() => coinRepo.create(userId, 'ETH', 'Ethereum')).toThrow(ConflictError)
+  expect(() => coinRepo.create(userId, 'ETH', 'Ethereum', Date.now())).toThrow(ConflictError)
 })
 
 test('remove удаляет и сообщает, существовала ли монета', () => {
   const userId = createUser('owner-three')
 
-  coinRepo.create(userId, 'SOL', 'Solana')
+  coinRepo.create(userId, 'SOL', 'Solana', Date.now())
 
   expect(coinRepo.remove(userId, 'SOL')).toBe(true)
   expect(coinRepo.listByUser(userId)).toHaveLength(0)
@@ -70,7 +72,7 @@ test('монеты одного пользователя не видны дру�
   const alice = createUser('alice')
   const bob = createUser('bob')
 
-  coinRepo.create(alice, 'BTC', 'Bitcoin')
+  coinRepo.create(alice, 'BTC', 'Bitcoin', Date.now())
 
   expect(coinRepo.listByUser(bob)).toHaveLength(0)
   expect(coinRepo.findByUserAndSymbol(bob, 'BTC')).toBeUndefined()
