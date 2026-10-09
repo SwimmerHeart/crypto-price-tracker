@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: Crypto Price Tracker API
+  description: |
+    Сервис отслеживания и агрегации цен криптовалют через CoinMarketCap.
+    Аутентификация — Bearer-ключ (API Key). Ключ выдаётся через POST /auth/register
+    и передаётся заголовком `Authorization: Bearer <apiKey>`.
+    История цен накапливается фоновой синхронизацией.
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+
+tags:
+  - name: health
+    description: Проверка работоспособности
+  - name: auth
+    description: Регистрация API-ключа
+  - name: coins
+    description: Отслеживаемые криптовалюты
+  - name: prices
+    description: Цены и история
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Проверка состояния сервиса
+      security: []
+      responses:
+        '200':
+          description: Сервис жив
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Выдать новый API-ключ
+      security: []
+      responses:
+        '201':
+          description: Ключ создан. Выдаётся один раз, хранить у себя.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKey]
+                properties:
+                  apiKey:
+                    type: string
+                    pattern: '^[a-f0-9]{64}$'
+                    example: a6390ac32b51...
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /coins:
+    get:
+      tags: [coins]
+      summary: Список отслеживаемых монет
+      responses:
+        '200':
+          description: Список текущего пользователя
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Coin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [coins]
+      summary: Начать отслеживание монеты
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewCoin'
+            example:
+              symbol: BTC
+      responses:
+        '201':
+          description: Монета добавлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Coin'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Символ не найден в CoinMarketCap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /coins/{symbol}:
+    delete:
+      tags: [coins]
+      summary: Перестать отслеживать монету
+      parameters:
+        - $ref: '#/components/parameters/Symbol'
+      responses:
+        '204':
+          description: Отслеживание прекращено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /coins/{symbol}/price:
+    get:
+      tags: [prices]
+      summary: Текущая цена из последней фоновой синхронизации
+      parameters:
+        - $ref: '#/components/parameters/Symbol'
+      responses:
+        '200':
+          description: Последняя цена по монете
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentPrice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Монета не отслеживается или цена ещё не собрана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+
+  /coins/{symbol}/history:
+    get:
+      tags: [prices]
+      summary: История цен с метриками (count/min/max/avg)
+      parameters:
+        - $ref: '#/components/parameters/Symbol'
+        - name: from
+          in: query
+          description: Начало диапазона, ISO 8601
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: Конец диапазона, ISO 8601
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Сколько точек вернуть (до 1000)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: Точки по убыванию времени и метрики за диапазон
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    Symbol:
+      name: symbol
+      in: path
+      required: true
+      description: Символ криптовалюты, например BTC
+      schema:
+        type: string
+        pattern: '^[A-Z0-9]{1,10}$'
+        example: BTC
+
+  responses:
+    BadRequest:
+      description: Некорректные входные данные
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Unauthorized:
+      description: Отсутствует или недействителен Bearer-ключ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+    Conflict:
+      description: Конфликт состояния (монета уже отслеживается)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorBody'
+
+  schemas:
+    Coin:
+      type: object
+      required: [id, symbol, name, last_updated_at]
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+          example: BTC
+        name:
+          type: string
+          example: Bitcoin
+        last_updated_at:
+          type: string
+          format: date-time
+
+    NewCoin:
+      type: object
+      required: [symbol]
+      properties:
+        symbol:
+          type: string
+          minLength: 1
+          maxLength: 10
+          pattern: '^[A-Za-z0-9]{1,10}$'
+          example: BTC
+
+    CurrentPrice:
+      type: object
+      required: [symbol, price, currency, fetched_at]
+      properties:
+        symbol:
+          type: string
+          example: BTC
+        price:
+          type: number
+        currency:
+          type: string
+          example: USD
+        fetched_at:
+          type: string
+          format: date-time
+
+    HistoryItem:
+      type: object
+      required: [price, fetched_at]
+      properties:
+        price:
+          type: number
+        fetched_at:
+          type: string
+          format: date-time
+
+    HistoryMetrics:
+      type: object
+      required: [count, min, max, avg, first_fetched_at, last_fetched_at]
+      properties:
+        count:
+          type: integer
+        min:
+          type: number
+          nullable: true
+        max:
+          type: number
+          nullable: true
+        avg:
+          type: number
+          nullable: true
+        first_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_fetched_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    HistoryResponse:
+      type: object
+      required: [symbol, currency, limit, items, metrics]
+      properties:
+        symbol:
+          type: string
+        currency:
+          type: string
+        limit:
+          type: integer
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryItem'
+        metrics:
+          $ref: '#/components/schemas/HistoryMetrics'
+
+    ErrorBody:
+      type: object
+      required: [statusCode, code, message, timestamp]
+      properties:
+        statusCode:
+          type: integer
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, AUTHENTICATION_ERROR, NOT_FOUND, CONFLICT, UPSTREAM_ERROR, INTERNAL_ERROR]
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        requestId:
+          type: string
+          format: uuid
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+              rule:
+                type: string
+
+security:
+  - ApiKeyAuth: []
