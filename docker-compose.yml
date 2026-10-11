@@ -1,0 +1,19 @@
+services:
+  api:
+    build: .
+    image: crypto-price-tracker:latest
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    environment:
+      PORT: "${PORT:-3000}"
+      CMC_API_KEY: ${CMC_API_KEY}
+      CMC_BASE_URL: ${CMC_BASE_URL:-https://pro-api.coinmarketcap.com}
+      CMC_TIMEOUT_MS: ${CMC_TIMEOUT_MS:-10000}
+      CURRENCY: ${CURRENCY:-USD}
+      SYNC_INTERVAL_MS: ${SYNC_INTERVAL_MS:-300000}
+      DB_PATH: ${DB_PATH:-/app/data/app.db}
+    volumes:
+      - prices-data:/app/data
+
+volumes:
+  prices-data:
